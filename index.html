@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>The GitHub Issue Solver — AI Agent</title>
+<meta name="description" content="Paste a GitHub issue URL and let the AI agent clone the repo, find the bug, and generate a fix automatically."/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg: #080b14;
+    --bg2: #0d1120;
+    --card: rgba(255,255,255,0.04);
+    --border: rgba(255,255,255,0.08);
+    --border2: rgba(99,179,237,0.3);
+    --text: #e8eaf6;
+    --muted: #6b7280;
+    --accent: #63b3ed;
+    --accent2: #9f7aea;
+    --green: #48bb78;
+    --red: #fc8181;
+    --yellow: #f6e05e;
+    --terminal-bg: #060810;
+    --add: #276749;
+    --remove: #742a2a;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+  body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse 80% 60% at 50% -10%,rgba(99,102,241,0.15),transparent),radial-gradient(ellipse 60% 40% at 80% 80%,rgba(159,122,234,0.1),transparent);pointer-events:none;z-index:0}
+
+  /* HEADER */
+  header{position:relative;z-index:1;text-align:center;padding:60px 20px 40px}
+  .logo-badge{display:inline-flex;align-items:center;gap:10px;background:rgba(99,179,237,0.1);border:1px solid rgba(99,179,237,0.25);border-radius:50px;padding:6px 18px;margin-bottom:24px;font-size:13px;color:var(--accent);letter-spacing:.5px}
+  .logo-badge svg{width:16px;height:16px}
+  h1{font-size:clamp(2rem,5vw,3.5rem);font-weight:800;background:linear-gradient(135deg,#fff 0%,#63b3ed 50%,#9f7aea 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;line-height:1.15;margin-bottom:16px}
+  .subtitle{color:var(--muted);font-size:1.05rem;max-width:540px;margin:0 auto;line-height:1.7}
+
+  /* ── AUTH NAV ──────────────────────────────────────────────────────────── */
+  .auth-nav{position:absolute;top:24px;right:28px;display:flex;align-items:center;gap:10px;z-index:10}
+
+  .auth-btn{background:transparent;border:1px solid var(--border);border-radius:10px;padding:8px 18px;color:var(--text);font-size:13px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;transition:border-color .2s,background .2s,color .2s}
+  .auth-btn:hover{border-color:rgba(99,179,237,0.4);background:rgba(99,179,237,0.07);color:var(--accent)}
+  .auth-btn.primary{background:linear-gradient(135deg,rgba(99,102,241,0.25),rgba(159,122,234,0.25));border-color:rgba(159,122,234,0.4);color:#c4b5fd}
+  .auth-btn.primary:hover{background:linear-gradient(135deg,rgba(99,102,241,0.4),rgba(159,122,234,0.4));border-color:rgba(159,122,234,0.7)}
+
+  .user-pill{display:flex;align-items:center;gap:10px;background:rgba(99,179,237,0.07);border:1px solid rgba(99,179,237,0.2);border-radius:50px;padding:6px 8px 6px 14px}
+  .user-pill-name{font-size:13px;font-weight:500;color:var(--accent);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .logout-btn{background:rgba(252,129,129,0.1);border:1px solid rgba(252,129,129,0.25);color:var(--red);border-radius:50px;padding:4px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:background .2s}
+  .logout-btn:hover{background:rgba(252,129,129,0.2)}
+
+  /* ── MODALS ────────────────────────────────────────────────────────────── */
+  .modal-overlay{position:fixed;inset:0;background:rgba(4,6,16,0.75);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;opacity:0;pointer-events:none;transition:opacity .25s}
+  .modal-overlay.open{opacity:1;pointer-events:all}
+
+  .modal{background:#0d1120;border:1px solid rgba(99,179,237,0.18);border-radius:22px;padding:36px;width:100%;max-width:420px;box-shadow:0 32px 80px rgba(0,0,0,0.6),0 0 0 1px rgba(255,255,255,0.04);transform:translateY(18px) scale(.97);transition:transform .28s cubic-bezier(.22,1,.36,1)}
+  .modal-overlay.open .modal{transform:translateY(0) scale(1)}
+
+  .modal-header{text-align:center;margin-bottom:28px}
+  .modal-icon{font-size:2.2rem;margin-bottom:10px;display:block}
+  .modal-title{font-size:1.3rem;font-weight:700;background:linear-gradient(135deg,#fff 0%,#63b3ed 60%,#9f7aea 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:6px}
+  .modal-subtitle{font-size:13px;color:var(--muted)}
+
+  .modal-close{position:absolute;top:16px;right:16px;background:rgba(255,255,255,0.05);border:1px solid var(--border);border-radius:8px;width:30px;height:30px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted);font-size:16px;transition:background .2s,color .2s;line-height:1}
+  .modal-close:hover{background:rgba(255,255,255,0.1);color:var(--text)}
+  .modal{position:relative}
+
+  .form-group{margin-bottom:16px}
+  .form-label{display:block;font-size:12px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px}
+  .form-input{width:100%;background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:12px;padding:13px 16px;color:var(--text);font-size:14px;font-family:'Inter',sans-serif;outline:none;transition:border-color .2s,box-shadow .2s}
+  .form-input::placeholder{color:var(--muted)}
+  .form-input:focus{border-color:var(--accent2);box-shadow:0 0 0 3px rgba(159,122,234,0.15)}
+
+  .modal-error{background:rgba(252,129,129,0.1);border:1px solid rgba(252,129,129,0.3);border-radius:10px;padding:10px 14px;font-size:13px;color:var(--red);margin-bottom:16px;display:none}
+  .modal-error.visible{display:block}
+
+  .modal-submit{width:100%;background:linear-gradient(135deg,#6366f1,#9f7aea);border:none;border-radius:12px;padding:14px;color:#fff;font-size:15px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:opacity .2s,transform .15s,box-shadow .2s;box-shadow:0 4px 20px rgba(99,102,241,0.35);margin-top:4px;display:flex;align-items:center;justify-content:center;gap:8px}
+  .modal-submit:hover{opacity:.9;transform:translateY(-1px);box-shadow:0 6px 28px rgba(99,102,241,0.5)}
+  .modal-submit:active{transform:translateY(0)}
+  .modal-submit:disabled{opacity:.5;cursor:not-allowed;transform:none}
+
+  .modal-switch{text-align:center;margin-top:20px;font-size:13px;color:var(--muted)}
+  .modal-switch a{color:var(--accent);text-decoration:none;font-weight:500;cursor:pointer}
+  .modal-switch a:hover{text-decoration:underline}
+
+  /* MAIN CONTAINER */
+  main{position:relative;z-index:1;max-width:900px;margin:0 auto;padding:0 20px 80px}
+
+  /* INPUT CARD */
+  .input-card{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:32px;backdrop-filter:blur(12px);margin-bottom:28px;transition:border-color .3s}
+  .input-card:hover{border-color:rgba(99,179,237,0.2)}
+  .input-label{font-size:13px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;display:block}
+  .input-row{display:flex;gap:12px}
+  .url-input{flex:1;background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:12px;padding:14px 18px;color:var(--text);font-size:15px;font-family:'Inter',sans-serif;outline:none;transition:border-color .2s,box-shadow .2s}
+  .url-input::placeholder{color:var(--muted)}
+  .url-input:focus{border-color:var(--accent2);box-shadow:0 0 0 3px rgba(159,122,234,0.15)}
+  .solve-btn{background:linear-gradient(135deg,#6366f1,#9f7aea);border:none;border-radius:12px;padding:14px 28px;color:#fff;font-size:15px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:8px;white-space:nowrap;transition:opacity .2s,transform .15s,box-shadow .2s;box-shadow:0 4px 20px rgba(99,102,241,0.35)}
+  .solve-btn:hover{opacity:.9;transform:translateY(-1px);box-shadow:0 6px 28px rgba(99,102,241,0.5)}
+  .solve-btn:active{transform:translateY(0)}
+  .solve-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+  .solve-btn svg{width:18px;height:18px}
+
+  /* STATUS STEPS */
+  .steps{display:flex;gap:8px;flex-wrap:wrap;margin-top:20px}
+  .step{display:flex;align-items:center;gap:6px;background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:50px;padding:5px 14px;font-size:12px;color:var(--muted);transition:all .3s}
+  .step.active{border-color:var(--accent);color:var(--accent);background:rgba(99,179,237,0.08)}
+  .step.done{border-color:var(--green);color:var(--green);background:rgba(72,187,120,0.08)}
+  .step.error{border-color:var(--red);color:var(--red)}
+  .step-dot{width:7px;height:7px;border-radius:50%;background:currentColor}
+  .step.active .step-dot{animation:pulse 1.2s infinite}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
+
+  /* TERMINAL */
+  .terminal{display:none;background:var(--terminal-bg);border:1px solid rgba(99,179,237,0.15);border-radius:16px;overflow:hidden;margin-bottom:28px;box-shadow:0 20px 60px rgba(0,0,0,0.5)}
+  .terminal.visible{display:block}
+  .terminal-header{background:rgba(255,255,255,0.04);padding:12px 18px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border)}
+  .t-dot{width:12px;height:12px;border-radius:50%}
+  .t-red{background:#ff5f57}.t-yellow{background:#febc2e}.t-green{background:#28c840}
+  .terminal-title{margin-left:8px;font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace}
+  .terminal-body{padding:20px;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.8;max-height:420px;overflow-y:auto;scroll-behavior:smooth}
+  .terminal-body::-webkit-scrollbar{width:6px}
+  .terminal-body::-webkit-scrollbar-track{background:transparent}
+  .terminal-body::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:3px}
+  .log-step{color:#63b3ed;font-weight:600}
+  .log-info{color:#a0aec0}
+  .log-success{color:#48bb78;font-weight:600}
+  .log-warning{color:#f6e05e}
+  .log-error{color:#fc8181;font-weight:600}
+  .log-test{color:#d6bcfa;white-space:pre-wrap;background:rgba(159,122,234,0.07);border-left:2px solid var(--accent2);padding:4px 10px;margin:4px 0;border-radius:0 4px 4px 0}
+
+  /* DIFF VIEWER */
+  .diff-section{display:none}
+  .diff-section.visible{display:block}
+  .result-card{background:var(--card);border:1px solid rgba(72,187,120,0.25);border-radius:20px;padding:28px;margin-bottom:20px;backdrop-filter:blur(12px)}
+  .result-header{display:flex;align-items:flex-start;gap:16px;margin-bottom:20px}
+  .result-icon{font-size:2rem;flex-shrink:0}
+  .result-title{font-size:1.1rem;font-weight:700;color:#fff;margin-bottom:6px}
+  .result-subtitle{font-size:14px;color:var(--muted);line-height:1.6}
+  .tag{display:inline-block;background:rgba(72,187,120,0.15);border:1px solid rgba(72,187,120,0.3);color:var(--green);font-size:11px;font-weight:600;padding:3px 10px;border-radius:50px;letter-spacing:.5px;margin-right:8px;text-transform:uppercase}
+
+  .diff-file{background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:14px;overflow:hidden;margin-bottom:16px}
+  .diff-file-header{background:rgba(255,255,255,0.04);padding:12px 18px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border)}
+  .diff-file-name{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--accent);font-weight:600}
+  .copy-btn{background:rgba(99,179,237,0.1);border:1px solid rgba(99,179,237,0.25);color:var(--accent);border-radius:8px;padding:5px 14px;font-size:12px;cursor:pointer;transition:all .2s;font-weight:600}
+  .copy-btn:hover{background:rgba(99,179,237,0.2)}
+  .copy-btn.copied{background:rgba(72,187,120,0.15);border-color:rgba(72,187,120,0.3);color:var(--green)}
+  .diff-content{font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.7;max-height:500px;overflow-y:auto;padding:12px 0}
+  .diff-content::-webkit-scrollbar{width:6px}
+  .diff-content::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:3px}
+  .diff-line{padding:0 16px;white-space:pre}
+  .diff-add{background:rgba(39,103,73,0.4);color:#9ae6b4}
+  .diff-remove{background:rgba(116,42,42,0.4);color:#feb2b2}
+  .diff-header-line{color:#718096;font-style:italic}
+  .diff-meta{color:var(--accent2)}
+
+  /* EMPTY STATE */
+  .empty-state{text-align:center;padding:60px 20px;color:var(--muted)}
+  .empty-icon{font-size:3.5rem;margin-bottom:16px;opacity:.5}
+  .empty-title{font-size:1.1rem;font-weight:600;margin-bottom:8px;color:#4a5568}
+  .empty-desc{font-size:14px;line-height:1.7}
+
+  /* SPINNER */
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .spinner{width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:inline-block}
+
+  /* FEATURES */
+  .features{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-bottom:32px}
+  .feat{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:22px;transition:border-color .3s}
+  .feat:hover{border-color:rgba(99,179,237,0.2)}
+  .feat-icon{font-size:1.6rem;margin-bottom:12px}
+  .feat-title{font-size:14px;font-weight:700;margin-bottom:6px;color:#e2e8f0}
+  .feat-desc{font-size:13px;color:var(--muted);line-height:1.6}
+
+  @media(max-width:600px){
+    .input-row{flex-direction:column}
+    .solve-btn{justify-content:center}
+    .auth-nav{top:16px;right:16px}
+    .user-pill-name{max-width:90px}
+  }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════════
+     AUTH MODALS
+══════════════════════════════════════════════════════════════ -->
+
+<!-- LOGIN MODAL -->
+<div class="modal-overlay" id="login-overlay" onclick="handleOverlayClick(event,'login-overlay')">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="login-title">
+    <button class="modal-close" onclick="closeModal('login-overlay')" aria-label="Close">✕</button>
+    <div class="modal-header">
+      <span class="modal-icon">🔑</span>
+      <div class="modal-title" id="login-title">Welcome back</div>
+      <div class="modal-subtitle">Sign in to save your solve history</div>
+    </div>
+    <div class="modal-error" id="login-error"></div>
+    <div class="form-group">
+      <label class="form-label" for="login-email">Email</label>
+      <input class="form-input" id="login-email" type="email" placeholder="you@example.com" autocomplete="email"/>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="login-password">Password</label>
+      <input class="form-input" id="login-password" type="password" placeholder="••••••••" autocomplete="current-password"/>
+    </div>
+    <button class="modal-submit" id="login-submit" onclick="submitLogin()">
+      Sign In
+    </button>
+    <div class="modal-switch">
+      Don't have an account? <a onclick="switchModal('login-overlay','register-overlay')">Sign Up</a>
+    </div>
+  </div>
+</div>
+
+<!-- REGISTER MODAL -->
+<div class="modal-overlay" id="register-overlay" onclick="handleOverlayClick(event,'register-overlay')">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="register-title">
+    <button class="modal-close" onclick="closeModal('register-overlay')" aria-label="Close">✕</button>
+    <div class="modal-header">
+      <span class="modal-icon">🚀</span>
+      <div class="modal-title" id="register-title">Create account</div>
+      <div class="modal-subtitle">Start solving issues with AI</div>
+    </div>
+    <div class="modal-error" id="register-error"></div>
+    <div class="form-group">
+      <label class="form-label" for="register-name">Full Name</label>
+      <input class="form-input" id="register-name" type="text" placeholder="Jane Doe" autocomplete="name"/>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="register-email">Email</label>
+      <input class="form-input" id="register-email" type="email" placeholder="you@example.com" autocomplete="email"/>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="register-password">Password <span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0">(min. 6 chars)</span></label>
+      <input class="form-input" id="register-password" type="password" placeholder="••••••••" autocomplete="new-password"/>
+    </div>
+    <button class="modal-submit" id="register-submit" onclick="submitRegister()">
+      Create Account
+    </button>
+    <div class="modal-switch">
+      Already have an account? <a onclick="switchModal('register-overlay','login-overlay')">Sign In</a>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     PAGE
+══════════════════════════════════════════════════════════════ -->
+
+<header>
+  <!-- AUTH NAV -->
+  <div class="auth-nav" id="auth-nav">
+    <!-- Logged-out state (default) -->
+    <div id="auth-logged-out" style="display:flex;gap:10px;align-items:center">
+      <button class="auth-btn" onclick="openModal('login-overlay')">Sign In</button>
+      <button class="auth-btn primary" onclick="openModal('register-overlay')">Sign Up</button>
+    </div>
+    <!-- Logged-in state (hidden until auth) -->
+    <div id="auth-logged-in" style="display:none">
+      <div class="user-pill">
+        <span class="user-pill-name" id="user-display-name"></span>
+        <button class="logout-btn" onclick="logout()">Log Out</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="logo-badge">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+    AI-Powered · Real-time · Autonomous
+  </div>
+  <h1>The GitHub Issue Solver</h1>
+  <p class="subtitle">Paste any GitHub bug report link. The AI agent clones the repo, finds the root cause, writes the fix, runs the tests — and shows you exactly what to change.</p>
+</header>
+
+<main>
+  <!-- FEATURES -->
+  <div class="features">
+    <div class="feat"><div class="feat-icon">🔍</div><div class="feat-title">Deep Codebase Search</div><div class="feat-desc">Scans the entire repository to locate the root cause of the bug.</div></div>
+    <div class="feat"><div class="feat-icon">⚙️</div><div class="feat-title">AI Fix Generation</div><div class="feat-desc">Gemini AI generates precise, minimal code changes to resolve the issue.</div></div>
+    <div class="feat"><div class="feat-icon">🧪</div><div class="feat-title">Test-Driven Iteration</div><div class="feat-desc">Runs the test suite and retries if tests fail — up to 3 times.</div></div>
+    <div class="feat"><div class="feat-icon">📋</div><div class="feat-title">Exact Line Output</div><div class="feat-desc">Outputs a clean unified diff — copy and paste directly into your editor.</div></div>
+  </div>
+
+  <!-- INPUT -->
+  <div class="input-card">
+    <label class="input-label" for="issue-url">GitHub Issue URL</label>
+    <div class="input-row">
+      <input id="issue-url" class="url-input" type="url"
+        placeholder="https://github.com/owner/repo/issues/123"
+        autocomplete="off" spellcheck="false"/>
+      <button class="solve-btn" id="solve-btn" onclick="startSolve()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+        Solve Issue
+      </button>
+    </div>
+    <div class="steps" id="steps">
+      <div class="step" id="step-fetch"><div class="step-dot"></div>Fetch Issue</div>
+      <div class="step" id="step-clone"><div class="step-dot"></div>Clone Repo</div>
+      <div class="step" id="step-analyze"><div class="step-dot"></div>Analyze</div>
+      <div class="step" id="step-identify"><div class="step-dot"></div>Identify Files</div>
+      <div class="step" id="step-fix"><div class="step-dot"></div>Generate Fix</div>
+      <div class="step" id="step-test"><div class="step-dot"></div>Run Tests</div>
+    </div>
+  </div>
+
+  <!-- TERMINAL -->
+  <div class="terminal" id="terminal">
+    <div class="terminal-header">
+      <div class="t-dot t-red"></div><div class="t-dot t-yellow"></div><div class="t-dot t-green"></div>
+      <span class="terminal-title">agent output — live stream</span>
+    </div>
+    <div class="terminal-body" id="terminal-body"></div>
+  </div>
+
+  <!-- RESULT DIFF -->
+  <div class="diff-section" id="diff-section"></div>
+</main>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   AUTH — state, modal helpers, fetch logic
+═══════════════════════════════════════════════════════════════ */
+
+// ── Modal helpers ─────────────────────────────────────────────
+
+function openModal(id) {
+  clearModalError(id === 'login-overlay' ? 'login-error' : 'register-error');
+  document.getElementById(id).classList.add('open');
+  // Focus first input after transition
+  setTimeout(() => {
+    const first = document.querySelector('#' + id + ' .form-input');
+    if (first) first.focus();
+  }, 280);
+}
+
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+}
+
+function handleOverlayClick(e, id) {
+  if (e.target.id === id) closeModal(id);
+}
+
+function switchModal(from, to) {
+  closeModal(from);
+  setTimeout(() => openModal(to), 180);
+}
+
+// Close modals on Escape
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    closeModal('login-overlay');
+    closeModal('register-overlay');
+  }
+});
+
+// Handle Enter key inside modals
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  if (document.getElementById('login-overlay').classList.contains('open'))   submitLogin();
+  if (document.getElementById('register-overlay').classList.contains('open')) submitRegister();
+});
+
+function showModalError(errorId, msg) {
+  const el = document.getElementById(errorId);
+  el.textContent = msg;
+  el.classList.add('visible');
+}
+
+function clearModalError(errorId) {
+  const el = document.getElementById(errorId);
+  el.textContent = '';
+  el.classList.remove('visible');
+}
+
+function setSubmitLoading(btnId, loading) {
+  const btn = document.getElementById(btnId);
+  btn.disabled = loading;
+  if (loading) {
+    btn._original = btn.innerHTML;
+    btn.innerHTML = '<div class="spinner"></div>';
+  } else {
+    btn.innerHTML = btn._original || btn.innerHTML;
+  }
+}
+
+// ── Auth state ────────────────────────────────────────────────
+
+function getToken() {
+  return localStorage.getItem('gh_solver_token');
+}
+
+function getUser() {
+  try { return JSON.parse(localStorage.getItem('gh_solver_user')); } catch { return null; }
+}
+
+function saveAuth(token, user) {
+  localStorage.setItem('gh_solver_token', token);
+  localStorage.setItem('gh_solver_user', JSON.stringify(user));
+}
+
+function clearAuth() {
+  localStorage.removeItem('gh_solver_token');
+  localStorage.removeItem('gh_solver_user');
+}
+
+function updateAuthUI() {
+  const user = getUser();
+  const token = getToken();
+  const loggedOut = document.getElementById('auth-logged-out');
+  const loggedIn  = document.getElementById('auth-logged-in');
+  const nameEl    = document.getElementById('user-display-name');
+
+  if (user && token) {
+    loggedOut.style.display = 'none';
+    loggedIn.style.display  = 'block';
+    nameEl.textContent = '👋 ' + user.name;
+  } else {
+    loggedOut.style.display = 'flex';
+    loggedIn.style.display  = 'none';
+  }
+}
+
+function logout() {
+  clearAuth();
+  updateAuthUI();
+}
+
+// ── Login ─────────────────────────────────────────────────────
+
+async function submitLogin() {
+  clearModalError('login-error');
+  const email    = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+
+  if (!email || !password) {
+    showModalError('login-error', 'Please fill in all fields.');
+    return;
+  }
+
+  setSubmitLoading('login-submit', true);
+  try {
+    const res  = await fetch('/auth/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      showModalError('login-error', data.detail || 'Login failed. Please try again.');
+      return;
+    }
+
+    saveAuth(data.token, data.user);
+    updateAuthUI();
+    closeModal('login-overlay');
+    document.getElementById('login-email').value    = '';
+    document.getElementById('login-password').value = '';
+
+  } catch (err) {
+    showModalError('login-error', 'Could not connect to server.');
+  } finally {
+    setSubmitLoading('login-submit', false);
+  }
+}
+
+// ── Register ──────────────────────────────────────────────────
+
+async function submitRegister() {
+  clearModalError('register-error');
+  const name     = document.getElementById('register-name').value.trim();
+  const email    = document.getElementById('register-email').value.trim();
+  const password = document.getElementById('register-password').value;
+
+  if (!name || !email || !password) {
+    showModalError('register-error', 'Please fill in all fields.');
+    return;
+  }
+  if (password.length < 6) {
+    showModalError('register-error', 'Password must be at least 6 characters.');
+    return;
+  }
+
+  setSubmitLoading('register-submit', true);
+  try {
+    const res  = await fetch('/auth/register', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ email, name, password }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      showModalError('register-error', data.detail || 'Registration failed. Please try again.');
+      return;
+    }
+
+    saveAuth(data.token, data.user);
+    updateAuthUI();
+    closeModal('register-overlay');
+    document.getElementById('register-name').value     = '';
+    document.getElementById('register-email').value    = '';
+    document.getElementById('register-password').value = '';
+
+  } catch (err) {
+    showModalError('register-error', 'Could not connect to server.');
+  } finally {
+    setSubmitLoading('register-submit', false);
+  }
+}
+
+// Initialise UI on load
+updateAuthUI();
+
+
+/* ═══════════════════════════════════════════════════════════════
+   SOLVER
+═══════════════════════════════════════════════════════════════ */
+
+let evtSource = null;
+
+function startSolve() {
+  const url = document.getElementById('issue-url').value.trim();
+  if (!url || !url.includes('github.com')) {
+    shake(document.getElementById('issue-url'));
+    return;
+  }
+  resetUI();
+  const btn = document.getElementById('solve-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Working...';
+  document.getElementById('terminal').classList.add('visible');
+
+  // Build headers — attach token if available
+  const headers = {'Content-Type': 'application/json'};
+  const token = getToken();
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+
+  fetch('/solve', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({issue_url: url})
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.job_id) listenStream(data.job_id);
+    else appendLog('error', '❌ Server error: ' + JSON.stringify(data));
+  })
+  .catch(err => {
+    appendLog('error', '❌ Could not connect to server: ' + err);
+    resetBtn();
+  });
+}
+
+function listenStream(jobId) {
+  evtSource = new EventSource(`/stream/${jobId}`);
+  evtSource.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    handleMessage(msg);
+  };
+  evtSource.onerror = () => {
+    evtSource.close();
+    resetBtn();
+  };
+}
+
+function handleMessage(msg) {
+  const t = msg.type;
+  if (t === 'heartbeat') return;
+  if (t === 'done') { evtSource && evtSource.close(); resetBtn(); return; }
+
+  if (t === 'step') {
+    setStep(msg.step, 'active');
+    appendLog('step', msg.message);
+  } else if (t === 'info') {
+    appendLog('info', msg.message);
+  } else if (t === 'success') {
+    appendLog('success', msg.message);
+    markAllDone();
+  } else if (t === 'warning') {
+    appendLog('warning', msg.message);
+  } else if (t === 'error') {
+    appendLog('error', '❌ ' + msg.message);
+    resetBtn();
+  } else if (t === 'test_output') {
+    appendLog('test', msg.output);
+  } else if (t === 'result') {
+    appendLog('success', '🎉 ' + msg.message);
+    renderResult(msg);
+    markAllDone();
+    resetBtn();
+  }
+}
+
+function setStep(id, state) {
+  const el = document.getElementById('step-' + id);
+  if (!el) return;
+  const order = ['fetch','clone','analyze','identify','fix','test'];
+  const idx = order.indexOf(id);
+  order.slice(0, idx).forEach(s => {
+    const se = document.getElementById('step-' + s);
+    if (se) { se.classList.remove('active','error'); se.classList.add('done'); }
+  });
+  el.classList.remove('done','error');
+  el.classList.add(state);
+}
+
+function markAllDone() {
+  ['fetch','clone','analyze','identify','fix','test'].forEach(s => {
+    const el = document.getElementById('step-' + s);
+    if (el) { el.classList.remove('active','error'); el.classList.add('done'); }
+  });
+}
+
+function appendLog(type, text) {
+  const body = document.getElementById('terminal-body');
+  const line = document.createElement('div');
+  if (type === 'step')         line.className = 'log-step';
+  else if (type === 'info')    line.className = 'log-info';
+  else if (type === 'success') line.className = 'log-success';
+  else if (type === 'warning') line.className = 'log-warning';
+  else if (type === 'error')   line.className = 'log-error';
+  else if (type === 'test')    line.className = 'log-test';
+  line.textContent = text;
+  body.appendChild(line);
+  body.scrollTop = body.scrollHeight;
+}
+
+function renderResult(msg) {
+  const sec = document.getElementById('diff-section');
+  sec.classList.add('visible');
+
+  let html = `<div class="result-card">
+    <div class="result-header">
+      <div class="result-icon">✅</div>
+      <div>
+        <div class="result-title"><span class="tag">Fixed</span> Root Cause</div>
+        <div class="result-subtitle">${esc(msg.root_cause || '')}</div>
+      </div>
+    </div>
+    <div class="result-subtitle" style="margin-top:12px;color:#a0aec0">${esc(msg.explanation || '')}</div>
+  </div>`;
+
+  if (msg.diffs && msg.diffs.length > 0) {
+    msg.diffs.forEach((d, i) => {
+      html += `<div class="diff-file">
+        <div class="diff-file-header">
+          <span class="diff-file-name">📄 ${esc(d.file)}</span>
+          <button class="copy-btn" id="copybtn-${i}" onclick="copyDiff(${i}, ${JSON.stringify(d.diff).replace(/</g,'&lt;')})">Copy Patch</button>
+        </div>
+        <div class="diff-content">${renderDiff(d.diff)}</div>
+      </div>`;
+    });
+  }
+
+  sec.innerHTML = html;
+  window._diffs = msg.diffs || [];
+}
+
+function renderDiff(diff) {
+  return diff.split('\n').map(line => {
+    const e = esc(line);
+    if (line.startsWith('+++') || line.startsWith('---')) return `<div class="diff-line diff-meta">${e}</div>`;
+    if (line.startsWith('@@'))  return `<div class="diff-line diff-header-line">${e}</div>`;
+    if (line.startsWith('+'))   return `<div class="diff-line diff-add">${e}</div>`;
+    if (line.startsWith('-'))   return `<div class="diff-line diff-remove">${e}</div>`;
+    return `<div class="diff-line">${e}</div>`;
+  }).join('');
+}
+
+function copyDiff(i, diff) {
+  const d = window._diffs && window._diffs[i] ? window._diffs[i].diff : diff;
+  navigator.clipboard.writeText(d).then(() => {
+    const btn = document.getElementById('copybtn-' + i);
+    btn.textContent = '✓ Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy Patch'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+
+function esc(str) {
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function resetUI() {
+  document.getElementById('terminal-body').innerHTML = '';
+  document.getElementById('diff-section').innerHTML  = '';
+  document.getElementById('diff-section').classList.remove('visible');
+  ['fetch','clone','analyze','identify','fix','test'].forEach(s => {
+    const el = document.getElementById('step-' + s);
+    if (el) el.className = 'step';
+  });
+}
+
+function resetBtn() {
+  const btn = document.getElementById('solve-btn');
+  btn.disabled = false;
+  btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg> Solve Issue';
+}
+
+function shake(el) {
+  el.style.animation = 'none';
+  el.offsetHeight;
+  el.style.borderColor = 'var(--red)';
+  el.style.animation = 'shake .4s';
+  setTimeout(() => { el.style.borderColor = ''; el.style.animation = ''; }, 600);
+}
+
+document.getElementById('issue-url').addEventListener('keydown', e => {
+  if (e.key === 'Enter') startSolve();
+});
+
+const style = document.createElement('style');
+style.textContent = '@keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}';
+document.head.appendChild(style);
+</script>
+</body>
+</html>
